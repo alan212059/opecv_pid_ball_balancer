@@ -14,9 +14,22 @@ float ki = 0.0;  // Integral gain
 float kd = 0.0;  // Derivative gain
 
 int error_priorX = 0;
-int integral_X = 0;
+float integral_X = 0;
 int error_priorY = 0;
-int integral_Y = 0;
+float integral_Y = 0;
+
+unsigned long lastTime = 0;  // Variable to store the last time compute was called
+
+// Function to constrain the servo position
+int constrainServoPosition(int pos) {
+    return constrain(pos, 0, 180);
+}
+
+// Function to set fail state and print error message
+void setFailState(const String& errorMessage) {
+    Serial.print("Error: ");
+    Serial.println(errorMessage);
+}
 
 void setup() {
     Serial.begin(9600);  // Initialize serial communication at 9600 baud rate
@@ -28,6 +41,8 @@ void setup() {
     s1.write(SERVO_CENTER_X);
     s2.write(SERVO_CENTER_Y); // Center the servo initially
     delay(5000);  // Delay for servo initialization
+
+    lastTime = millis();  // Initialize lastTime
 }
 
 void loop() {
@@ -56,40 +71,50 @@ void loop() {
             if (commaIndex != -1) {
                 int x = data.substring(0, commaIndex).toInt();
                 int y = data.substring(commaIndex + 1).toInt();
-                
+
                 if (abs(x) < 50) {
                     x = 0; // Adjust for small movements
                 }
                 if (abs(y) < 30) {
                     y = 0;
                 }
-                
+
                 int mapped_X = constrain(map(x, -XLIM, XLIM, -LIM, LIM), -LIM, LIM);
                 int mapped_Y = constrain(map(y, -YLIM, YLIM, -LIM, LIM), -LIM, LIM);
+
+                // PID calculation with time period
+                unsigned long currentTime = millis();
+                float period = (currentTime - lastTime) / 1000.0;  // Time period in seconds
+                lastTime = currentTime;
 
                 int errorX = mapped_X - 0;  // Setpoint is 0 in this example
                 int errorY = mapped_Y - 0;
 
-                integral_X = constrain(integral_X + errorX, -1000, 1000);  // Anti-windup for integral term
-                integral_Y = constrain(integral_Y + errorY, -1000, 1000);
+                integral_X = constrain(integral_X + errorX * period, -1000, 1000);  // Anti-windup for integral term
+                integral_Y = constrain(integral_Y + errorY * period, -1000, 1000);
 
-                int derivative_X = errorX - error_priorX;
-                int derivative_Y = errorY - error_priorY;
-                
+                float derivative_X = (errorX - error_priorX) / period;
+                float derivative_Y = (errorY - error_priorY) / period;
+
                 float outputX = kp * errorX + ki * integral_X + kd * derivative_X;
                 float outputY = kp * errorY + ki * integral_Y + kd * derivative_Y;
-                
-                int posX = SERVO_CENTER_X + outputX;  // Adjust for servo center position
-                int posY = SERVO_CENTER_Y + outputY;
-                
+
+                int posX = constrainServoPosition(SERVO_CENTER_X + outputX);  // Adjust for servo center position
+                int posY = constrainServoPosition(SERVO_CENTER_Y + outputY);
+
                 s1.write(posX);  // Move the servo based on the PID output
                 s2.write(posY);
-                
-                delay(10);  // Small delay to stabilize the loop
-                
+
+                Serial.print("PID Output - X: ");
+                Serial.print(outputX);
+                Serial.print(", Y: ");
+                Serial.println(outputY);
+
                 error_priorX = errorX;
                 error_priorY = errorY;
+            } else {
+                setFailState("Invalid data format received.");
             }
         }
     }
-}
+} 
