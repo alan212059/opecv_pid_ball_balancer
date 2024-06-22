@@ -1,0 +1,95 @@
+#include <Servo.h>
+
+const int SERVO_CENTER_X = 81;
+const int SERVO_CENTER_Y = 87;
+const int LIM = 20;  // Limit for servo movement
+const int XLIM = 150;
+const int YLIM = 150;
+
+Servo s1;  // Servo for X-axis
+Servo s2;  // Servo for Y-axis
+
+float kp = 0.5;  // Proportional gain
+float ki = 0.0;  // Integral gain
+float kd = 0.0;  // Derivative gain
+
+int error_priorX = 0;
+int integral_X = 0;
+int error_priorY = 0;
+int integral_Y = 0;
+
+void setup() {
+    Serial.begin(9600);  // Initialize serial communication at 9600 baud rate
+    Serial.println("Arduino is ready");
+
+    s1.attach(9);  // Attach servo to pin 9
+    s2.attach(10);  // Attach servo to pin 10
+
+    s1.write(SERVO_CENTER_X);
+    s2.write(SERVO_CENTER_Y); // Center the servo initially
+    delay(5000);  // Delay for servo initialization
+}
+
+void loop() {
+    if (Serial.available() > 0) {
+        String data = Serial.readStringUntil('\n');  // Read data from serial until newline character
+        
+        // Check if the command starts with #
+        if (data.startsWith("#")) {
+            // Process PID gain adjustments
+            if (data.startsWith("#P")) {
+                kp = data.substring(2).toFloat();
+                Serial.print("Set P to ");
+                Serial.println(kp, 4);  // Print with four decimal places
+            } else if (data.startsWith("#I")) {
+                ki = data.substring(2).toFloat();
+                Serial.print("Set I to ");
+                Serial.println(ki, 4);  // Print with four decimal places
+            } else if (data.startsWith("#D")) {
+                kd = data.substring(2).toFloat();
+                Serial.print("Set D to ");
+                Serial.println(kd, 4);  // Print with four decimal places
+            }
+        } else {
+            // Parse the received data for servo movement
+            int commaIndex = data.indexOf(',');
+            if (commaIndex != -1) {
+                int x = data.substring(0, commaIndex).toInt();
+                int y = data.substring(commaIndex + 1).toInt();
+                
+                if (abs(x) < 50) {
+                    x = 0; // Adjust for small movements
+                }
+                if (abs(y) < 30) {
+                    y = 0;
+                }
+                
+                int mapped_X = constrain(map(x, -XLIM, XLIM, -LIM, LIM), -LIM, LIM);
+                int mapped_Y = constrain(map(y, -YLIM, YLIM, -LIM, LIM), -LIM, LIM);
+
+                int errorX = mapped_X - 0;  // Setpoint is 0 in this example
+                int errorY = mapped_Y - 0;
+
+                integral_X = constrain(integral_X + errorX, -1000, 1000);  // Anti-windup for integral term
+                integral_Y = constrain(integral_Y + errorY, -1000, 1000);
+
+                int derivative_X = errorX - error_priorX;
+                int derivative_Y = errorY - error_priorY;
+                
+                float outputX = kp * errorX + ki * integral_X + kd * derivative_X;
+                float outputY = kp * errorY + ki * integral_Y + kd * derivative_Y;
+                
+                int posX = SERVO_CENTER_X + outputX;  // Adjust for servo center position
+                int posY = SERVO_CENTER_Y + outputY;
+                
+                s1.write(posX);  // Move the servo based on the PID output
+                s2.write(posY);
+                
+                delay(10);  // Small delay to stabilize the loop
+                
+                error_priorX = errorX;
+                error_priorY = errorY;
+            }
+        }
+    }
+}
