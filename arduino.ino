@@ -1,21 +1,25 @@
 #include <Servo.h>
 
+int Xp;
+int Yp;
+
+int mult_val;
+
 // Constants for servo center positions and movement limits
 const int SERVO_CENTER_X = 81;
 const int SERVO_CENTER_Y = 90;
-const int LIM = 9;         // Limit for servo movement
-const int XLIM = 150;
-const int YLIM = 150;
+const int LIM = 20;         // Limit for servo movement
+const int XLIM = 270;
+const int YLIM = 220;
 
 // Servo objects for X-axis and Y-axis
 Servo s1;
 Servo s2;
 
 // PID gain constants
-float kpX = 0.65;  // Proportional gain for X-axis
-float kpY = 0.65;  // Proportional gain for Y-axis
-float ki = 0.1;    // Integral gain
-float kd = 0.06;   // Derivative gain
+float kp = 0.05;    // Proportional gain for both axes
+float ki = 0.00335;      // Integral gain
+float kd = 0.02;    // Derivative gain
 
 // PID control variables for X-axis and Y-axis
 int error_priorX = 0;
@@ -24,11 +28,11 @@ int error_priorY = 0;
 float integral_Y = 0;
 
 // Time tracking variable for PID calculations
-unsigned long lastTime = 0;  
+unsigned long lastTime = 0;
 
 // Function to constrain the servo position within safe limits
 int constrainServoPosition(int pos) {
-    return constrain(pos, 60, 110);
+    return constrain(pos, 35, 125);
 }
 
 // Function to set the fail state and print error message
@@ -59,14 +63,10 @@ void loop() {
 
         if (data.startsWith("#")) {
             // Process PID gain adjustments based on received commands
-            if (data.startsWith("#PX")) {
-                kpX = data.substring(3).toFloat();  // Adjust proportional gain for X-axis
-                Serial.print("Set P for X to ");
-                Serial.println(kpX, 4);  // Print the updated gain value
-            } else if (data.startsWith("#PY")) {
-                kpY = data.substring(3).toFloat();  // Adjust proportional gain for Y-axis
-                Serial.print("Set P for Y to ");
-                Serial.println(kpY, 4);  // Print the updated gain value
+            if (data.startsWith("#P")) {
+                kp = data.substring(2).toFloat();  // Adjust proportional gain for both axes
+                Serial.print("Set P for X and Y to ");
+                Serial.println(kp, 4);  // Print the updated gain value
             } else if (data.startsWith("#I")) {
                 ki = data.substring(2).toFloat();  // Adjust integral gain
                 Serial.print("Set I to ");
@@ -83,13 +83,19 @@ void loop() {
                 int x = data.substring(0, commaIndex).toInt();
                 int y = data.substring(commaIndex + 1).toInt();
 
-                // Filter out small noise
-                if (abs(x) < 30) x = 0;
-                if (abs(y) < 30) y = 0;
-
+                if(abs(x)<100 && abs(y)<100){
+                  mult_val=1.5;
+                  }
+                else if(abs(x)<30 && abs(y)<30){mult_val=0;}
+                else{mult_val=3;}
+                
+                
+                
+                if(abs(x-Xp)<10){x=Xp;}
+                if(abs(y-Yp)<10){y=Yp;}
                 // Map and constrain the received values to the servo limits
-                int mapped_X = constrain(map(x, -XLIM, XLIM, -LIM, LIM), -LIM, LIM);
-                int mapped_Y = constrain(map(y, -YLIM, YLIM, -LIM, LIM), -LIM, LIM);
+                int mapped_X =map(x, -XLIM, XLIM, -LIM, LIM);
+                int mapped_Y = map(y, -YLIM, YLIM, -LIM, LIM);
 
                 // Calculate the time period for PID calculations
                 unsigned long currentTime = millis();
@@ -109,26 +115,27 @@ void loop() {
                 float derivative_Y = kd * (errorY - error_priorY) / period;
 
                 // Compute the PID output
-                float outputX = kpX * errorX + integral_X + derivative_X;
-                float outputY = kpY * errorY + integral_Y + derivative_Y;
+                float outputX = kp * errorX + integral_X + derivative_X;
+                float outputY = kp * errorY + integral_Y + derivative_Y;
 
                 // Constrain and move the servos based on the PID output
-                int posX = constrainServoPosition(SERVO_CENTER_X + outputX);
-                int posY = constrainServoPosition(SERVO_CENTER_Y + outputY);
+                int posX = constrainServoPosition(SERVO_CENTER_X + (mult_val*outputX));
+                int posY = constrainServoPosition(SERVO_CENTER_Y - (mult_val*outputY));
 
                 s1.write(posX);  // Move the X-axis servo
                 s2.write(posY);  // Move the Y-axis servo
 
                 // Print the PID output values
                 Serial.print("PID Output - X: ");
-                Serial.print(outputX);
+                Serial.print(posX);
                 Serial.print(", Y: ");
-                Serial.println(outputY);
-
+                Serial.println(posY);
+                Xp=x;
+                Yp=y;
                 // Update the previous errors for the next iteration
                 error_priorX = errorX;
                 error_priorY = errorY;
-
+                
                 delay(10);  // Short delay to allow for servo movement
             } else {
                 setFailState("Invalid data format received.");  // Handle invalid data format
@@ -136,4 +143,3 @@ void loop() {
         }
     }
 }
-
